@@ -8,22 +8,21 @@ from dotenv import load_dotenv
 import logging
 import yaml
 
-# Настройка логирования
+# Logging settings
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Загрузка конфигурации
+# Congif
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
 
-# Создаём папки если их нет
 os.makedirs('logs', exist_ok=True)
 os.makedirs('config', exist_ok=True)
 
-# Загрузка конфигурации фильтров
+# Filter errors and warnings
 CONFIG_PATH = 'config/filters.yaml'
 DEFAULT_CONFIG = {
     'filters': [
@@ -48,7 +47,6 @@ DEFAULT_CONFIG = {
 }
 
 def load_config():
-    """Загружает или создает конфигурационный файл"""
     if not os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, 'w') as f:
             yaml.dump(DEFAULT_CONFIG, f, allow_unicode=True)
@@ -65,7 +63,7 @@ class LogAnalyzer:
         self.max_lines = config['max_lines']
 
     def analyze_logs(self):
-        """Анализирует логи и возвращает отфильтрованные результаты"""
+        """Analyzes the logs and returns the results"""
         results = {f['name']: [] for f in self.filters}
         
         try:
@@ -84,7 +82,7 @@ class LogAnalyzer:
             return None
 
     def format_results(self, results):
-        """Форматирует результаты для отправки"""
+        """Results formatter"""
         if not results:
             return "Не удалось проанализировать логи"
             
@@ -92,18 +90,17 @@ class LogAnalyzer:
         for filter_name, lines in results.items():
             if lines:
                 message.append(f"📍 {filter_name} ({len(lines)}):")
-                message.extend(lines[-20:])  # Последние 10 записей каждого типа 
+                message.extend(lines[-20:])
                 message.append("") 
         
-        return "\n".join(message) if message else "Нет записей, соответствующих фильтрам"
+        return "\n".join(message) if message else "Записи не найдены"
 
-# Инициализация бота
+# Bot initialization
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 analyzer = LogAnalyzer()
 
 async def send_welcome(message: Message):
-    """Приветственное сообщение с инструкциями"""
     active_filters = "\n".join(
         f"• {f['name']} ({f['pattern']})" 
         for f in config['filters'] 
@@ -111,14 +108,13 @@ async def send_welcome(message: Message):
     )
     
     await message.reply(
-        f"📋 Бот для анализа логов\n\n"
+        f"Бот для отслеживания ошибок, который освобождает разработчиков от ручного мониторинга логов\n\n"
         f"Активные фильтры:\n{active_filters}\n\n"
-        f"Отправьте команду /logs для получения последних логов"
+        f"Загрузите файл с раширением .log и затем отправьте команду /logs, чтобы получить отчет"
     )
 
 async def send_logs(message: Message):
-    """Обработка команды для получения логов"""
-    await message.reply("Анализирую логи...")
+    await message.reply("⏳ Анализирую логи...")
     
     try:
         results = await asyncio.to_thread(analyzer.analyze_logs)
@@ -134,7 +130,6 @@ async def send_logs(message: Message):
         await message.answer(f"Произошла ошибка: {e}")
 
 async def handle_document(message: Message):
-    """Обработка загруженного файла логов"""
     if not message.document.file_name.endswith('.log'):
         await message.reply("Пожалуйста, отправьте файл с расширением .log")
         return
@@ -143,21 +138,17 @@ async def handle_document(message: Message):
         file_id = message.document.file_id
         file = await bot.get_file(file_id)
         
-        # Формируем путь для сохранения
         file_path = f"logs/{file_id}.log"
         
-        # Скачиваем файл
         await bot.download_file(file.file_path, file_path)
         
-        # Обновляем путь к логам в анализаторе
         analyzer.log_file = file_path
         
-        await message.reply("Файл логов успешно загружен. Используйте /logs для анализа.")
+        await message.reply("Файл логов успешно загружен. Используйте команду /logs, чтобы получить анализ")
     except Exception as e:
         logger.error(f"Ошибка загрузки файла: {e}")
         await message.reply(f"Произошла ошибка при загрузке файла: {e}")
 
-# Регистрация обработчиков
 dp.message.register(send_welcome, Command(commands=['start', 'help']))
 dp.message.register(send_logs, Command(commands='logs'))
 dp.message.register(handle_document, F.document)
