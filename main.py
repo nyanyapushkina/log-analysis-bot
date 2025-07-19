@@ -2,7 +2,7 @@ import os
 import re
 import asyncio
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command
 from dotenv import load_dotenv
 import logging
@@ -47,6 +47,7 @@ DEFAULT_CONFIG = {
 }
 
 def load_config():
+    """Load configuration from YAML file or create default if not exists"""
     if not os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, 'w') as f:
             yaml.dump(DEFAULT_CONFIG, f, allow_unicode=True)
@@ -54,16 +55,28 @@ def load_config():
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
 
+
+def save_config(config):
+    """Save current configuration to YAML file"""
+    with open(CONFIG_PATH, 'w') as f:
+        yaml.dump(config, f, allow_unicode=True)
+
 config = load_config()
+
 
 class LogAnalyzer:
     def __init__(self):
-        self.filters = [f for f in config['filters'] if f['enabled']]
+        """Initialize log analyzer with current configuration"""
+        self.update_filters()
         self.log_file = config['log_file']
         self.max_lines = config['max_lines']
-
+    
+    def update_filters(self):
+        """Update active filters from configuration"""
+        self.filters = [f for f in config['filters'] if f['enabled']]
+    
     def analyze_logs(self):
-        """Analyzes the logs and returns the results"""
+        """Analyze logs using active filters and get a dict"""
         results = {f['name']: [] for f in self.filters}
         
         try:
@@ -81,6 +94,7 @@ class LogAnalyzer:
             logger.error(f"Ошибка анализа логов: {e}")
             return None
 
+    
     def format_results(self, results):
         """Results formatter"""
         if not results:
@@ -100,7 +114,30 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 analyzer = LogAnalyzer()
 
+
+def get_main_keyboard():
+    """Create a keyboard for main commands"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="/logs"), KeyboardButton(text="/filters")],
+            [KeyboardButton(text="/contact"), KeyboardButton(text="/help")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def get_filters_keyboard():
+    """Create keyboard for filter selection"""
+    buttons = []
+    for filter in config['filters']:
+        status = "✅" if filter['enabled'] else "❌"
+        buttons.append([KeyboardButton(text=f"{status} {filter['name']}")])
+    buttons.append([KeyboardButton(text="⬅️ Back")])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
 async def send_welcome(message: Message):
+    """Send welcome message with bot description and active filters"""
     active_filters = "\n".join(
         f"• {f['name']} ({f['pattern']})" 
         for f in config['filters'] 
@@ -113,10 +150,12 @@ async def send_welcome(message: Message):
         f"Загрузите файл с раширением .log и затем отправьте команду /logs, чтобы получить отчет"
     )
 
+
 async def send_logs(message: Message):
-    await message.reply("⏳ Анализирую логи...")
+    await message.reply("⏳ Анализирую логи...", reply_markup=ReplyKeyboardRemove())
     
     try:
+        analyzer.update_filters()
         results = await asyncio.to_thread(analyzer.analyze_logs)
         formatted = analyzer.format_results(results)
         
@@ -129,7 +168,9 @@ async def send_logs(message: Message):
         logger.error(f"Ошибка обработки команды: {e}")
         await message.answer(f"Произошла ошибка: {e}")
 
+
 async def handle_document(message: Message):
+    """Handle uploaded log files"""
     if not message.document.file_name.endswith('.log'):
         await message.reply("Пожалуйста, отправьте файл с расширением .log")
         return
@@ -139,19 +180,72 @@ async def handle_document(message: Message):
         file = await bot.get_file(file_id)
         
         file_path = f"logs/{file_id}.log"
-        
         await bot.download_file(file.file_path, file_path)
         
         analyzer.log_file = file_path
+        config['log_file'] = file_path
+        save_config(config)
         
-        await message.reply("Файл логов успешно загружен. Используйте команду /logs, чтобы получить анализ")
+        await message.reply("Файл логов успешно загружен. Используйте команду /logs, чтобы получить анализ",
+            reply_markup=get_main_keyboard()
+        )
     except Exception as e:
         logger.error(f"Ошибка загрузки файла: {e}")
         await message.reply(f"Произошла ошибка при загрузке файла: {e}")
 
+
+async def show_filters_menu(message: Message):
+    """Show interactive filters menu with toggle buttons"""
+    await message.reply(
+        "Выберите, какие фильтры применить:",
+        reply_markup=get_filters_keyboard()
+    )
+
+
+async def toggle_filter(message: Message):
+    """Toggle filter status based on button press"""
+    try:
+        button_text = message.text
+        filter_name = button_text[2:].strip()
+        
+        if filter_name == "⬅️ Назад":
+            await message.reply("Вернуться в главное меню", reply_markup=get_main_keyboard())
+            return
+            
+        for filter in config['filters']:
+            if filter['name'] == filter_name:
+                filter['enabled'] = not filter['enabled']
+                save_config(config)
+                await message.reply(
+                    f"Filter '{filter_name}' {'enabled' if filter['enabled'] else 'disabled'}",
+                    reply_markup=get_filters_keyboard()
+                )
+                return
+                
+        await message.reply("Фильтры не найдены", reply_markup=get_filters_keyboard())
+    except Exception as e:
+        logger.error(f"Ошибка переключения фильтров: {e}")
+        await message.reply(f"Ошибка: {e}", reply_markup=get_main_keyboard())
+
+
+async def contact_developer(message: Message):
+    """Show developer contact information"""
+    await message.reply(
+        "Обратная связь: @nyanyapushkina\n\n"
+        "Код на <a href='https://github.com/nyanyapushkina/log-analysis-bot'>GitHub</a>",
+        parse_mode="HTML",
+        reply_markup=get_main_keyboard()
+    )
+
+
+# Command handlers
 dp.message.register(send_welcome, Command(commands=['start', 'help']))
 dp.message.register(send_logs, Command(commands='logs'))
+dp.message.register(show_filters_menu, Command(commands='filters'))
+dp.message.register(contact_developer, Command(commands='contact'))
 dp.message.register(handle_document, F.document)
+dp.message.register(toggle_filter, F.text.startswith(('✅', '❌')))
+
 
 async def main():
     await dp.start_polling(bot)
