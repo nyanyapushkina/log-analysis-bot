@@ -132,7 +132,6 @@ def get_filters_keyboard():
     for filter in config['filters']:
         status = "✅" if filter['enabled'] else "❌"
         buttons.append([KeyboardButton(text=f"{status} {filter['name']}")])
-    buttons.append([KeyboardButton(text="⬅️ Back")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
