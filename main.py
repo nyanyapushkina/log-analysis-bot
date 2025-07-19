@@ -216,7 +216,7 @@ async def toggle_filter(message: Message):
                 filter['enabled'] = not filter['enabled']
                 save_config(config)
                 await message.reply(
-                    f"Filter '{filter_name}' {'enabled' if filter['enabled'] else 'disabled'}",
+                    f"Фильтр '{filter_name}' {'включен' if filter['enabled'] else 'выключен'}",
                     reply_markup=get_filters_keyboard()
                 )
                 return
