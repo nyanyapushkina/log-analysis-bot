@@ -98,7 +98,7 @@ class LogAnalyzer:
     def format_results(self, results):
         """Results formatter"""
         if not results:
-            return "Не удалось проанализировать логи"
+            return "Не удалось проанализировать логи. Отправьте файл с расширением .log и попробуйте еще раз."
             
         message = []
         for filter_name, lines in results.items():
